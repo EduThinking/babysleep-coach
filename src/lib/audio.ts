@@ -1,7 +1,9 @@
 /**
- * In-browser sleep sound synthesizer (Web Audio API).
- * Every sound is generated procedurally, so there are no audio files and no licensing issues.
+ * In-browser sleep sound engine (Web Audio API).
+ * Most sounds are generated procedurally; sounds with a `src` stream an audio file
+ * through the same graph, so volume, fade-in/out and the sleep timer behave the same.
  */
+import { soundById } from "../data/sounds";
 
 type Stopper = () => void;
 
@@ -120,11 +122,29 @@ class SoundEngine {
     out.connect(master);
     const nodes: (AudioScheduledSourceNode)[] = [];
     const timers: number[] = [];
+    const cleanups: (() => void)[] = [];
 
     const start = (n: AudioScheduledSourceNode) => {
       n.start();
       nodes.push(n);
     };
+
+    const file = soundById(id)?.src;
+    if (file) {
+      // stream instead of decoding: a few minutes of decoded audio is tens of MB on a phone
+      const el = new Audio(file);
+      el.loop = true;
+      el.preload = "auto";
+      const node = ctx.createMediaElementSource(el);
+      node.connect(out);
+      el.play().catch((err) => console.warn("[sound] could not play", file, err));
+      cleanups.push(() => {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+        node.disconnect();
+      });
+    }
 
     switch (id) {
       case "white":
@@ -368,6 +388,7 @@ class SoundEngine {
             /* already stopped */
           }
         });
+        cleanups.forEach((c) => c());
         out.disconnect();
       }, 400);
     };

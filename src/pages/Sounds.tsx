@@ -173,7 +173,7 @@ export default function Sounds() {
 
         <p className="flex gap-2 rounded-3xl bg-sage-light p-4 text-[13px] leading-relaxed text-sage-ink">
           <Icon name="lightbulb" size={18} className="shrink-0" />
-          소리 기기는 아기 침대에서 1m 이상 떨어뜨리고, 너무 크지 않게 틀어주세요. 모든 소리는 앱에서 직접 합성되어 오프라인에서도 재생돼요.
+          소리 기기는 아기 침대에서 1m 이상 떨어뜨리고, 너무 크지 않게 틀어주세요. 기본 소리는 앱에서 직접 만들어져 오프라인에서도 재생돼요.
         </p>
       </main>
     </>
