@@ -45,7 +45,8 @@ export default function Coach() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [ai, setAi] = useState<boolean | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const typingRef = useRef<HTMLDivElement>(null);
+  const seenCount = useRef<number | null>(null);
   const sentQ = useRef<string | null>(null);
   const ctx = useMemo(() => buildCoachContext(baby!, events, now), [baby, events, now]);
 
@@ -53,9 +54,27 @@ export default function Coach() {
     aiStatus().then((s) => setAi(s.ai));
   }, []);
 
+  // Chat scrolling: a just-sent question (and the typing dots) sits right above the input box;
+  // when the answer arrives, the question moves to the top so the answer reads from its first line.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const first = seenCount.current === null;
+    seenCount.current = chats.length;
+    const behavior: ScrollBehavior = first ? "auto" : "smooth";
+    const byId = (id: string) => document.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    const last = chats.at(-1);
+    if (busy) {
+      typingRef.current?.scrollIntoView({ behavior, block: "end" });
+    } else if (last?.role === "user") {
+      byId(last.id)?.scrollIntoView({ behavior, block: "end" });
+    } else if (last) {
+      const question = [...chats].reverse().find((m) => m.role === "user");
+      byId(question?.id ?? last.id)?.scrollIntoView({ behavior, block: "start" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats.length, busy]);
+
+  // keep scrolled items clear of the sticky header (top) and the input box / mini player (bottom)
+  const scrollMargins = `scroll-mt-24 ${miniPlayer ? "scroll-mb-[240px]" : "scroll-mb-[176px]"}`;
 
   const send = async (q: string) => {
     const question = q.trim();
@@ -164,12 +183,12 @@ export default function Coach() {
           )}
           {chats.map((m) =>
             m.role === "user" ? (
-              <div key={m.id} className="flex flex-col items-end">
+              <div key={m.id} data-msg-id={m.id} className={`flex flex-col items-end ${scrollMargins}`}>
                 <p className="max-w-[85%] rounded-3xl rounded-br-lg bg-primary px-4 py-3 text-[15px] font-medium leading-relaxed text-on-primary">{m.text}</p>
                 <span className="mt-1 text-[11px] text-ink-variant">{fmtTime(m.createdAt)}</span>
               </div>
             ) : (
-              <div key={m.id} className="flex gap-2">
+              <div key={m.id} data-msg-id={m.id} className={`flex gap-2 ${scrollMargins}`}>
                 <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted-purple text-primary">
                   <Icon name="auto_awesome" size={18} fill />
                 </span>
@@ -220,7 +239,7 @@ export default function Coach() {
             ),
           )}
           {busy && (
-            <div className="flex gap-2">
+            <div ref={typingRef} className={`flex gap-2 ${scrollMargins}`}>
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted-purple text-primary">
                 <Icon name="auto_awesome" size={18} fill />
               </span>
@@ -231,7 +250,6 @@ export default function Coach() {
               </div>
             </div>
           )}
-          <div ref={endRef} />
         </div>
 
         <p className="mt-4 flex gap-2 rounded-2xl bg-surface-low p-3 text-[11px] leading-relaxed text-ink-variant">
