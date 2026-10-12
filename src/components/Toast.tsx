@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
+import { useMiniPlayerShown } from "./SoundProvider";
 
 export interface ToastAction {
   label: string;
@@ -18,6 +19,7 @@ const Ctx = createContext<(t: ToastInput) => void>(() => {});
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<(ToastInput & { key: number }) | null>(null);
   const timer = useRef<number | null>(null);
+  const miniPlayer = useMiniPlayerShown();
 
   const show = useCallback((t: ToastInput) => {
     if (timer.current) clearTimeout(timer.current);
@@ -28,7 +30,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={show}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-[92px] z-50 flex justify-center px-4" aria-live="polite">
+      <div className={`pointer-events-none fixed inset-x-0 ${miniPlayer ? "bottom-[156px]" : "bottom-[92px]"} z-50 flex justify-center px-4`} aria-live="polite">
         {toast && (
           <div key={toast.key} className="animate-rise pointer-events-auto w-full max-w-[408px] rounded-3xl bg-night-indigo px-4 py-3 text-white shadow-lift">
             <div className="flex items-start gap-3">

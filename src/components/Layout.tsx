@@ -1,6 +1,6 @@
-import { NavLink, Link, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Link, Outlet } from "react-router-dom";
 import { useStore } from "../store";
-import { useSound } from "./SoundProvider";
+import { useMiniPlayerShown, useSound } from "./SoundProvider";
 import { soundById } from "../data/sounds";
 import { ageLabel } from "../lib/time";
 import { Icon } from "./Icon";
@@ -15,8 +15,9 @@ const TABS = [
 ];
 
 export function Layout() {
+  const miniPlayer = useMiniPlayerShown();
   return (
-    <div className="mx-auto min-h-dvh w-full max-w-[440px] bg-surface pb-28">
+    <div className={`mx-auto min-h-dvh w-full max-w-[440px] bg-surface ${miniPlayer ? "pb-44" : "pb-28"}`}>
       <Outlet />
       <MiniPlayer />
       <BottomNav />
@@ -80,9 +81,8 @@ function BottomNav() {
 }
 
 function MiniPlayer() {
-  const { current, playing, toggle, stop } = useSound();
-  const loc = useLocation();
-  if (!current || !playing || loc.pathname.replace(/\/$/, "") === "/sounds") return null;
+  const { current, toggle, stop } = useSound();
+  if (!useMiniPlayerShown()) return null;
   const s = soundById(current);
   return (
     <div className="fixed inset-x-0 bottom-[84px] z-30 mx-auto w-full max-w-[440px] px-4">
