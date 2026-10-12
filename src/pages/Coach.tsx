@@ -63,7 +63,7 @@ export default function Coach() {
     addChat({ role: "user", text: question });
     setBusy(true);
     const res = await askCoach(question, buildCoachContext(baby!, events, new Date()), history);
-    addChat({ role: "assistant", text: res.answer, source: res.source });
+    addChat({ role: "assistant", text: res.answer, source: res.source, sources: res.sources });
     setBusy(false);
   };
 
@@ -132,7 +132,7 @@ export default function Coach() {
                 <li key={s}>· {s}</li>
               ))}
             </ul>
-            <p className="mt-1.5 text-[12px] text-ink-variant">수유·이유식·발달 등 수면 밖의 질문은 아직 답하지 않아요.</p>
+            <p className="mt-1.5 text-[12px] text-ink-variant">수면 밖의 질문은 질병관리청·대한소아청소년과학회 등 공신력 있는 기관 자료에서 찾은 내용만 출처와 함께 알려드려요.</p>
           </div>
         </section>
 
@@ -174,9 +174,32 @@ export default function Coach() {
                 <div className="min-w-0 flex-1">
                   <div className="rounded-3xl rounded-tl-lg bg-card px-4 py-3 text-[14px] leading-relaxed text-ink shadow-soft">
                     <Rich text={m.text} />
+                    {m.sources && m.sources.length > 0 && (
+                      <div className="mt-3 border-t border-surface-container pt-2">
+                        <p className="text-[12px] font-bold text-ink-variant">📎 출처</p>
+                        <ul className="mt-1 space-y-1">
+                          {m.sources
+                            .filter((src) => /^https?:\/\//.test(src.url))
+                            .map((src) => (
+                              <li key={src.url}>
+                                <a
+                                  href={src.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-primary underline-offset-2 hover:underline"
+                                >
+                                  {src.name}
+                                  {src.title !== src.name && <span className="font-normal text-ink-variant">· {src.title}</span>}
+                                  <Icon name="open_in_new" size={14} />
+                                </a>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {/(낮잠|밤잠|예상)/.test(m.text) && (
+                    {m.source !== "web" && /(낮잠|밤잠|예상)/.test(m.text) && (
                       <button onClick={() => navigate("/routine")} className="press flex items-center gap-1 rounded-full bg-muted-purple px-3 py-1.5 text-[12px] font-semibold text-primary">
                         <Icon name="bedtime" size={16} /> 수면 루틴 확인
                       </button>
@@ -187,7 +210,7 @@ export default function Coach() {
                       </Link>
                     )}
                     <span className="self-center text-[11px] text-ink-variant">
-                      {fmtTime(m.createdAt)} · {m.source === "llm" ? "AI 답변" : "기록 기반 답변"}
+                      {fmtTime(m.createdAt)} · {m.source === "web" ? "기관 자료 요약" : m.source === "llm" ? "AI 답변" : "기록 기반 답변"}
                     </span>
                   </div>
                 </div>

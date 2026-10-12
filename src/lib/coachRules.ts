@@ -2,6 +2,7 @@
 // and use explicit .js extensions (Node ESM requires them at runtime).
 import { fmtDuration } from "./time.js";
 import { searchGuides, recommendedGuides, type Guide } from "../data/guides.js";
+import { TRUSTED_SITES } from "../data/trustedSources.js";
 
 /** The minimum data the coach needs. No birth date, no raw history beyond today. */
 export interface CoachContext {
@@ -36,7 +37,21 @@ export const COACH_SCOPE = [
   "취침 루틴과 안전한 수면 환경",
   "이번 주 수면 패턴 요약",
   "지친 보호자 마음 다독이기",
+  "수유·이유식 등 다른 육아 질문은 공신력 있는 기관 자료를 찾아 요약",
 ];
+
+/** Section headers: our baby's sleep (only for questions about this baby) on top, the answer below. */
+export const babySleepHeader = (nickname: string) => `🌙 ${nickname}의 잠 기록`;
+export const ANSWER_HEADER = "💬 답변";
+export const WEB_HEADER = "🔎 공신력 있는 기관 자료를 찾아 요약했어요";
+
+/** Appended to every answer built from outside (web) sources. */
+export const WEB_NOTE =
+  "⚠️ 아이의 월령, 건강 상태, 발달 속도에 따라 맞는 방법이 달라질 수 있어요. 의학적인 판단이 필요한 내용은 꼭 소아청소년과 의사와 상담해 확인하세요.";
+
+const SITES_FOR_HUMANS = TRUSTED_SITES.filter((t) =>
+  ["health.kdca.go.kr", "nip.kdca.go.kr", "pediatrics.or.kr", "childcare.go.kr"].includes(t.domain),
+);
 
 /** Exhaustion / self-blame in the caregiver's words. */
 export const CAREGIVER_STRAIN = /(힘들|지쳐|지친|지침|버겁|우울|눈물|울고\s?싶|자책|내\s?탓|제\s?탓|잘못\s?(하|했)|못하겠|한계|멘붕|피곤해\s?죽|잠을\s?못\s?자서)/;
@@ -47,13 +62,14 @@ export const CAREGIVER_COMFORT =
 export const CAREGIVER_SUPPORT_NOTE =
   "마음이 힘든 날이 길게 이어지면 혼자 견디지 말고 가족이나 전문가에게 도움을 요청해 주세요. 정신건강 위기상담 전화 1577-0199에서도 이야기를 들어줘요.";
 
-export const SCOPE_MESSAGE = [
-  "저는 우리 아기 수면을 돕는 AI 수면 코치라서, 이 질문에는 정확하게 답하기 어려워요.",
+/** Non-sleep question with no trusted source found (or web search unavailable). */
+export const NOT_FOUND_MESSAGE = [
+  "공신력 있는 기관 자료에서 이 질문에 대한 답을 찾지 못했어요.",
   "",
-  "💤 이런 내용을 코칭해 드릴 수 있어요",
-  ...COACH_SCOPE.map((s) => `· ${s}`),
+  "정확한 내용은 소아청소년과 의사와 상담하시거나, 아래 기관 사이트에서 직접 확인해 주세요.",
+  ...SITES_FOR_HUMANS.map((t) => `· ${t.name} (${t.domain})`),
   "",
-  "수유·이유식·발달·건강처럼 수면 밖의 육아 질문은 소아청소년과나 육아 상담 기관에 확인해 주세요. 밤중 수유나 이앓이처럼 잠과 이어진 고민이라면 편하게 물어봐 주세요.",
+  "💤 우리 아기 잠에 관한 질문은 기록을 바탕으로 바로 답해 드릴 수 있어요.",
 ].join("\n");
 
 const SLEEP_WORDS = /(잠|재우|재워|재울|수면|깨|깬|졸|잤|자요|자는|자다|자고|취침|기상|일어나|일어났|루틴|백색소음|자장가|밤중|새벽|자기\s?전|웨이크|wake)/i;
@@ -97,7 +113,7 @@ export function ruleCoachAnswer(question: string, ctx: CoachContext): string {
     ].join("\n");
   }
 
-  if (isOffTopic(question)) return SCOPE_MESSAGE;
+  if (isOffTopic(question)) return NOT_FOUND_MESSAGE;
 
   const facts: string[] = [];
   const info: string[] = [];
@@ -141,17 +157,14 @@ export function ruleCoachAnswer(question: string, ctx: CoachContext): string {
     const rec = recommendedGuides(ctx.baby.ageMonths, 2);
     rec.forEach((g) => info.push(`${g.title}: ${g.summary}`));
   } else {
-    facts.push(`지금 ${name}는 "${ctx.state}" 상태예요.`);
-    if (ctx.today.events.length) facts.push(`오늘 기록 ${ctx.today.events.length}건, 낮잠 ${ctx.today.napCount}회(총 ${fmtDuration(ctx.today.napMinutes)}).`);
-    if (ctx.prediction.next) facts.push(`다음 예상: ${ctx.prediction.next}`);
-    info.push(`이런 내용을 물어보시면 기록을 바탕으로 답해 드릴게요: ${COACH_SCOPE.join(", ")}.`);
+    info.push(`이런 내용을 물어보시면 기록을 바탕으로 답해 드릴게요: ${COACH_SCOPE.slice(0, 5).join(", ")}.`);
   }
 
   const parts: string[] = [];
   const strained = CAREGIVER_STRAIN.test(question);
   if (strained) parts.push(CAREGIVER_COMFORT);
-  if (facts.length) parts.push("📋 기록에서 확인된 내용\n" + facts.map((f) => `· ${f}`).join("\n"));
-  if (info.length) parts.push("💡 일반적인 정보\n" + info.map((f) => `· ${f}`).join("\n"));
+  if (facts.length) parts.push(babySleepHeader(name) + "\n" + facts.map((f) => `· ${f}`).join("\n"));
+  if (info.length) parts.push(ANSWER_HEADER + "\n" + info.map((f) => `· ${f}`).join("\n"));
   if (strained && /(우울|눈물|울고\s?싶|못하겠|한계)/.test(question)) parts.push(CAREGIVER_SUPPORT_NOTE);
   return parts.join("\n\n") + guideLines(guides);
 }
