@@ -91,7 +91,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   createdAt: string;
-  source?: "llm" | "rules";
+  source?: "llm" | "rules" | "web";
+  /** trusted organization pages the answer was built from (web answers only) */
+  sources?: { name: string; title: string; url: string }[];
 }
 
 export interface VoiceParseResult {

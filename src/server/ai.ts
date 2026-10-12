@@ -4,7 +4,19 @@
 // Relative imports use explicit .js extensions because Vercel runs these as Node ES modules.
 import { GoogleGenAI, Type } from "@google/genai";
 import { parseVoice, toOffsetIso } from "../lib/voiceParser.js";
-import { ruleCoachAnswer, SAFETY_NOTE, RED_FLAG, SCOPE_MESSAGE, isOffTopic, type CoachContext } from "../lib/coachRules.js";
+import {
+  ruleCoachAnswer,
+  SAFETY_NOTE,
+  RED_FLAG,
+  NOT_FOUND_MESSAGE,
+  WEB_HEADER,
+  WEB_NOTE,
+  ANSWER_HEADER,
+  babySleepHeader,
+  isOffTopic,
+  type CoachContext,
+} from "../lib/coachRules.js";
+import { TRUSTED_SITES, matchTrustedSite } from "../data/trustedSources.js";
 import { searchGuides } from "../data/guides.js";
 import type { SleepEventType, VoiceParseResult } from "../lib/types";
 
@@ -49,25 +61,122 @@ const cleanLine = (x: unknown) =>
         .slice(0, 300)
     : "";
 
+/** Returned by formatCoachAnswer when Gemini judges the question to be outside sleep. */
+export const OUT_OF_SCOPE = Symbol("out-of-scope");
+
 /**
- * Turn the coach's JSON ({ facts, info }) into the two-section answer the app shows.
+ * Turn the coach's JSON ({ in_scope, about_my_baby, facts, info }) into the answer the app shows:
+ * this baby's sleep facts on top (only when the question is about this baby), the answer below.
  * Returns null when the payload is unusable, so the caller falls back to the rule engine.
  */
-export function formatCoachAnswer(raw: string): string | null {
+export function formatCoachAnswer(raw: string, nickname = "우리 아기"): string | typeof OUT_OF_SCOPE | null {
   let data: any;
   try {
     data = JSON.parse(raw);
   } catch {
     return null;
   }
-  if (data?.in_scope === false) return SCOPE_MESSAGE;
-  const facts = (Array.isArray(data?.facts) ? data.facts : []).map(cleanLine).filter(Boolean).slice(0, 5);
+  if (data?.in_scope === false) return OUT_OF_SCOPE;
+  const aboutBaby = data?.about_my_baby !== false;
+  const facts = aboutBaby ? (Array.isArray(data?.facts) ? data.facts : []).map(cleanLine).filter(Boolean).slice(0, 5) : [];
   const info = (Array.isArray(data?.info) ? data.info : []).map(cleanLine).filter(Boolean).slice(0, 5);
   if (!facts.length && !info.length) return null;
   const sections: string[] = [];
-  if (facts.length) sections.push("📋 기록에서 확인된 내용\n" + facts.map((f: string) => `· ${f}`).join("\n"));
-  if (info.length) sections.push("💡 일반적인 정보\n" + info.map((f: string) => `· ${f}`).join("\n"));
+  if (facts.length) sections.push(babySleepHeader(nickname) + "\n" + facts.map((f: string) => `· ${f}`).join("\n"));
+  if (info.length) sections.push(ANSWER_HEADER + "\n" + info.map((f: string) => `· ${f}`).join("\n"));
   return sections.join("\n\n");
+}
+
+export interface WebSource {
+  name: string;
+  title: string;
+  url: string;
+}
+
+type GroundedResponse = Parameters<typeof visibleText>[0] & {
+  candidates?: {
+    groundingMetadata?: {
+      groundingChunks?: { web?: { uri?: string; title?: string; domain?: string } }[];
+      groundingSupports?: { segment?: { text?: string }; groundingChunkIndices?: number[] }[];
+    };
+  }[];
+};
+
+/** Domain of a grounding chunk. The Gemini API returns a Google redirect URI and puts the site's domain in `title`. */
+export function chunkHost(web: { uri?: string; title?: string; domain?: string } | undefined): string | null {
+  if (!web) return null;
+  if (web.domain) return web.domain;
+  try {
+    const host = new URL(web.uri ?? "").hostname;
+    if (host && !/(^|\.)(google\.com|googleapis\.com|vertexaisearch\.cloud\.google\.com)$/.test(host)) return host;
+  } catch {
+    /* not a URL */
+  }
+  const t = (web.title ?? "").trim().toLowerCase();
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(t) ? t : null;
+}
+
+/**
+ * Keep only the parts of a Google-Search-grounded answer that are backed by a trusted site.
+ * Text with no grounding support, or supported only by other sites, is dropped.
+ * Returns null when nothing trusted remains.
+ */
+export function extractTrustedAnswer(res: GroundedResponse): { lines: string[]; sources: WebSource[] } | null {
+  const text = visibleText(res);
+  if (!text || /NOT_FOUND/.test(text)) return null;
+  const meta = res.candidates?.[0]?.groundingMetadata;
+  const chunks = meta?.groundingChunks ?? [];
+  const trusted = chunks.map((c) => matchTrustedSite(chunkHost(c.web)));
+  const lines: string[] = [];
+  const used = new Set<number>();
+  for (const sup of meta?.groundingSupports ?? []) {
+    const idx = (sup.groundingChunkIndices ?? []).filter((i) => trusted[i]);
+    const line = cleanLine(sup.segment?.text);
+    if (!idx.length || !line || lines.includes(line)) continue;
+    lines.push(line);
+    idx.forEach((i) => used.add(i));
+  }
+  if (!lines.length) return null;
+  const sources: WebSource[] = [];
+  for (const i of [...used].sort((a, b) => a - b)) {
+    const site = trusted[i]!;
+    const web = chunks[i].web ?? {};
+    const title = web.title && chunkHost({ title: web.title }) === null ? web.title : site.name;
+    if (!web.uri || sources.some((s) => s.url === web.uri)) continue;
+    sources.push({ name: site.name, title, url: web.uri });
+  }
+  return { lines: lines.slice(0, 6), sources: sources.slice(0, 4) };
+}
+
+export function formatWebAnswer(lines: string[]) {
+  return `${WEB_HEADER}\n${lines.map((l) => `· ${l}`).join("\n")}\n\n${WEB_NOTE}`;
+}
+
+const WEB_SYSTEM = `당신은 영유아 보호자에게 공신력 있는 기관의 육아·건강 정보만 요약해 주는 도우미입니다.
+- 반드시 Google 검색을 사용하고, 아래 기관 사이트의 내용만 근거로 삼으세요. 검색어에 site: 연산자를 붙여 범위를 좁히세요(예: "이유식 시작 시기 site:health.kdca.go.kr").
+  ${TRUSTED_SITES.map((t) => `${t.domain}(${t.name})`).join(", ")}
+- 블로그, 카페, 커뮤니티, 쇼핑몰, 개인 사이트의 내용은 쓰지 마세요.
+- 진단하지 말고, 약 이름·용량 같은 개별 처방은 말하지 마세요.
+- 한국어 해요체로 3~5문장만 쓰세요. 각 문장은 검색한 기관 자료에 근거해야 해요. 머리말, 출처 목록, 주의 문구는 쓰지 마세요(앱이 붙여요).
+- 기관 자료에서 답을 찾지 못하면 다른 말 없이 NOT_FOUND 라고만 쓰세요.`;
+
+async function webAnswer(question: string, ctx: CoachContext): Promise<{ answer: string; sources: WebSource[] } | null> {
+  const client = getAI();
+  if (!client) return null;
+  const res = await client.models.generateContent({
+    model: MODEL,
+    contents: `아기: 생후 ${ctx.baby.ageMonths}개월\n보호자 질문: ${question}`,
+    config: {
+      systemInstruction: WEB_SYSTEM,
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+      thinkingConfig: THINKING,
+      tools: [{ googleSearch: {} }],
+    },
+  });
+  const found = extractTrustedAnswer(res as GroundedResponse);
+  if (!found) return null;
+  return { answer: formatWebAnswer(found.lines), sources: found.sources };
 }
 
 /** The client sends its local time + UTC offset so server-side parsing matches the user's clock. */
@@ -140,7 +249,7 @@ async function llmParseVoice(text: string, clientClock: Date): Promise<VoicePars
 
 const COACH_SYSTEM = `당신은 한국의 0~24개월 영유아 보호자를 돕는 'AI 수면 코치'입니다.
 원칙:
-1. JSON으로만 답하세요. facts에는 [아기 기록 요약]에서 확인되는 사실을, info에는 [검증된 가이드]의 일반 정보와 제안을 한 문장씩 넣으세요. 제목·이모지·글머리표는 넣지 마세요(앱이 붙여요).
+1. JSON으로만 답하세요. facts에는 질문과 관련해 [아기 기록 요약]에서 확인되는 이 아기의 잠 이야기를, info에는 질문에 대한 답과 제안을 한 문장씩 넣으세요. 이 아기의 잠에 관한 질문이 아니면 about_my_baby를 false로 하고 facts는 빈 배열로 두세요. 제목·이모지·글머리표는 넣지 마세요(앱이 붙여요).
 2. 진단하지 마세요. "수면장애", "문제가 있다" 같은 표현을 쓰지 말고, 관찰된 변화를 중립적으로 설명하세요.
 3. 확정적 표현을 줄이고("~일 수 있어요", "~해 보세요"), 추천에는 짧은 이유를 붙이세요.
 4. 상관관계를 인과관계처럼 말하지 마세요.
@@ -178,14 +287,15 @@ async function llmCoach(question: string, ctx: CoachContext, history: { role: st
         type: Type.OBJECT,
         properties: {
           in_scope: { type: Type.BOOLEAN, description: "질문이 아기 수면(또는 잠과 이어진 수유·이앓이·발달)에 관한 것이면 true" },
+          about_my_baby: { type: Type.BOOLEAN, description: "이 아기의 실제 잠(기록·예측·오늘 상황)에 관한 질문이면 true, 일반적인 수면 지식 질문이면 false" },
           facts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "기록에서 확인된 사실, 문장마다 1개 (0~4개)" },
           info: { type: Type.ARRAY, items: { type: Type.STRING }, description: "일반적인 정보와 제안, 문장마다 1개 (1~4개)" },
         },
-        required: ["in_scope", "facts", "info"],
+        required: ["in_scope", "about_my_baby", "facts", "info"],
       },
     },
   });
-  return formatCoachAnswer(visibleText(res));
+  return formatCoachAnswer(visibleText(res), ctx.baby.nickname);
 }
 
 /** Re-express event_time with the client's UTC offset. */
@@ -224,12 +334,21 @@ export async function handleCoachChat(body: any): Promise<HandlerResult> {
     // safety answers are deterministic — never delegated to the LLM
     return { status: 200, body: { answer: ruleCoachAnswer(question, ctx), source: "rules" } };
   }
-  if (isOffTopic(question)) {
-    return { status: 200, body: { answer: SCOPE_MESSAGE, source: "rules" } };
-  }
+  // non-sleep parenting questions: answer only from trusted public-health / pediatric sites
+  const fromWeb = async (): Promise<HandlerResult> => {
+    try {
+      const web = await webAnswer(question, ctx);
+      if (web) return { status: 200, body: { answer: web.answer, sources: web.sources, source: "web" } };
+    } catch (err: any) {
+      console.warn("[coach/chat] web search failed:", err?.message);
+    }
+    return { status: 200, body: { answer: NOT_FOUND_MESSAGE, source: "rules" } };
+  };
+
+  if (isOffTopic(question)) return fromWeb();
   try {
     const answer = await llmCoach(question, ctx, history);
-    if (answer === SCOPE_MESSAGE) return { status: 200, body: { answer, source: "llm" } };
+    if (answer === OUT_OF_SCOPE) return fromWeb();
     if (answer) return { status: 200, body: { answer: `${answer}\n\n_${SAFETY_NOTE}_`, source: "llm" } };
   } catch (err: any) {
     console.warn("[coach/chat] LLM failed, using rules:", err?.message);

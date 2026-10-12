@@ -33,7 +33,7 @@ export async function askCoach(
   question: string,
   context: CoachContext,
   history: { role: string; text: string }[],
-): Promise<{ answer: string; source: "llm" | "rules" }> {
+): Promise<{ answer: string; source: "llm" | "rules" | "web"; sources?: { name: string; title: string; url: string }[] }> {
   try {
     return await postJson("/api/coach/chat", { question, context, history }, 30000);
   } catch {

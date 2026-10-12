@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { COACH_SCOPE, SCOPE_MESSAGE, isOffTopic, ruleCoachAnswer, type CoachContext } from "../src/lib/coachRules";
-import { formatCoachAnswer } from "../src/server/ai";
+import { NOT_FOUND_MESSAGE, isOffTopic, ruleCoachAnswer, type CoachContext } from "../src/lib/coachRules";
+import { OUT_OF_SCOPE, formatCoachAnswer } from "../src/server/ai";
 
 const ctx: CoachContext = {
   baby: { nickname: "하은이", ageMonths: 7, ageGroup: "7~9개월", usualWakeTime: "07:00", usualBedtime: "20:00" },
@@ -17,7 +17,7 @@ describe("coach scope", () => {
     "off-topic: %s",
     (q) => {
       expect(isOffTopic(q)).toBe(true);
-      expect(ruleCoachAnswer(q, ctx)).toBe(SCOPE_MESSAGE);
+      expect(ruleCoachAnswer(q, ctx)).toBe(NOT_FOUND_MESSAGE);
     },
   );
 
@@ -36,13 +36,14 @@ describe("coach scope", () => {
     expect(ruleCoachAnswer("이유식 먹고 숨을 이상하게 쉬어요", ctx)).toContain("119");
   });
 
-  it("the scope message lists what the coach covers", () => {
-    for (const s of COACH_SCOPE) expect(SCOPE_MESSAGE).toContain(s);
+  it("the not-found message points to a doctor and trusted sites, not guesses", () => {
+    expect(NOT_FOUND_MESSAGE).toContain("소아청소년과");
+    expect(NOT_FOUND_MESSAGE).toContain("health.kdca.go.kr");
   });
 
-  it("an LLM in_scope=false reply becomes the scope message", () => {
-    expect(formatCoachAnswer(JSON.stringify({ in_scope: false, facts: [], info: [] }))).toBe(SCOPE_MESSAGE);
-    expect(formatCoachAnswer(JSON.stringify({ in_scope: true, facts: [], info: ["정보"] }))).toBe("💡 일반적인 정보\n· 정보");
+  it("an LLM in_scope=false reply is routed to the web path", () => {
+    expect(formatCoachAnswer(JSON.stringify({ in_scope: false, facts: [], info: [] }))).toBe(OUT_OF_SCOPE);
+    expect(formatCoachAnswer(JSON.stringify({ in_scope: true, facts: [], info: ["정보"] }))).toBe("💬 답변\n· 정보");
   });
 });
 
@@ -50,7 +51,7 @@ describe("caregiver comfort", () => {
   it("opens with empathy when the caregiver is exhausted, then still answers", () => {
     const a = ruleCoachAnswer("요즘 밤에 자주 깨서 너무 힘들어요", ctx);
     expect(a.startsWith("🤍")).toBe(true);
-    expect(a).toContain("💡 일반적인 정보");
+    expect(a).toContain("💬 답변");
     expect(a).toContain("밤중 각성");
     expect(a).not.toContain("1577-0199");
   });
