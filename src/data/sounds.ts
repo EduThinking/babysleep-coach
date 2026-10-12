@@ -6,8 +6,10 @@ export interface SoundDef {
   subtitle: string;
   category: SoundCategory;
   icon: string;
-  /** All sounds are synthesized in-browser with the Web Audio API → no licensing issues. */
-  license: "SELF_GENERATED";
+  /** SELF_GENERATED: synthesized in-browser. PROVIDED: an audio file supplied by the app owner. */
+  license: "SELF_GENERATED" | "PROVIDED";
+  /** audio file to stream (under /public); omitted for synthesized sounds */
+  src?: string;
 }
 
 export const SOUND_CATEGORIES: { key: SoundCategory; label: string; icon: string }[] = [
@@ -25,6 +27,7 @@ export const SOUNDS: SoundDef[] = [
   { id: "waves", title: "파도 소리", subtitle: "천천히 밀려오는 바다", category: "NATURE", icon: "water", license: "SELF_GENERATED" },
   { id: "forest", title: "고요한 숲", subtitle: "바람과 작은 새소리", category: "NATURE", icon: "forest", license: "SELF_GENERATED" },
   { id: "wind", title: "잔잔한 바람", subtitle: "부드럽게 스치는 바람", category: "NATURE", icon: "air", license: "SELF_GENERATED" },
+  { id: "cradle", title: "Cradle Beneath the Stars", subtitle: "별빛 아래 요람 · 잔잔한 자장가", category: "LULLABY", icon: "star", license: "PROVIDED", src: "/audio/cradle-beneath-the-stars.mp3" },
   { id: "musicbox", title: "오르골 반짝반짝", subtitle: "작은 별 · 오르골", category: "LULLABY", icon: "toys", license: "SELF_GENERATED" },
   { id: "brahms", title: "브람스 자장가", subtitle: "피아노 · 느린 템포", category: "LULLABY", icon: "piano", license: "SELF_GENERATED" },
   { id: "soft", title: "잔잔한 자장가", subtitle: "포근한 허밍 패드", category: "LULLABY", icon: "nightlight", license: "SELF_GENERATED" },

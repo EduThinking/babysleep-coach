@@ -1,5 +1,5 @@
 // Minimal offline shell: network-first for navigation, cache-first for static assets.
-const CACHE = "bsc-v1";
+const CACHE = "bsc-v2";
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/icon.svg", "/manifest.webmanifest"])));
   self.skipWaiting();
@@ -11,6 +11,8 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).pathname.startsWith("/api/")) return;
+  // audio streams use Range requests (206 partial responses) — let the browser handle them
+  if (req.headers.has("range")) return;
   if (req.mode === "navigate") {
     e.respondWith(fetch(req).catch(() => caches.match("/")));
     return;

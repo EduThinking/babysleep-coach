@@ -82,7 +82,7 @@ function BottomNav() {
 function MiniPlayer() {
   const { current, playing, toggle, stop } = useSound();
   const loc = useLocation();
-  if (!current || !playing || loc.pathname === "/sounds") return null;
+  if (!current || !playing || loc.pathname.replace(/\/$/, "") === "/sounds") return null;
   const s = soundById(current);
   return (
     <div className="fixed inset-x-0 bottom-[84px] z-30 mx-auto w-full max-w-[440px] px-4">
