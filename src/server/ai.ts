@@ -24,6 +24,51 @@ function getAI(): GoogleGenAI | null {
   return ai;
 }
 
+// Reasoning models spend output tokens on thinking, so leave headroom beyond the visible answer.
+const THINKING = { includeThoughts: false };
+
+/**
+ * Visible text of a Gemini response: non-thought parts of the first candidate only.
+ * `res.text` alone can include a reasoning model's draft notes.
+ */
+export function visibleText(res: { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] }): string {
+  const parts = res.candidates?.[0]?.content?.parts ?? [];
+  return parts
+    .filter((p) => !p.thought && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("")
+    .trim();
+}
+
+const cleanLine = (x: unknown) =>
+  typeof x === "string"
+    ? x
+        .replace(/^[\s·•\-*]+/, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300)
+    : "";
+
+/**
+ * Turn the coach's JSON ({ facts, info }) into the two-section answer the app shows.
+ * Returns null when the payload is unusable, so the caller falls back to the rule engine.
+ */
+export function formatCoachAnswer(raw: string): string | null {
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const facts = (Array.isArray(data?.facts) ? data.facts : []).map(cleanLine).filter(Boolean).slice(0, 5);
+  const info = (Array.isArray(data?.info) ? data.info : []).map(cleanLine).filter(Boolean).slice(0, 5);
+  if (!facts.length && !info.length) return null;
+  const sections: string[] = [];
+  if (facts.length) sections.push("📋 기록에서 확인된 내용\n" + facts.map((f: string) => `· ${f}`).join("\n"));
+  if (info.length) sections.push("💡 일반적인 정보\n" + info.map((f: string) => `· ${f}`).join("\n"));
+  return sections.join("\n\n");
+}
+
 /** The client sends its local time + UTC offset so server-side parsing matches the user's clock. */
 function clientNow(body: any): Date {
   const t = typeof body?.now === "string" ? new Date(body.now) : new Date();
@@ -45,7 +90,8 @@ async function llmParseVoice(text: string, clientClock: Date): Promise<VoicePars
     contents: `현재 시각: ${hhmm}\n보호자 발화: "${text}"`,
     config: {
       temperature: 0,
-      maxOutputTokens: 200,
+      maxOutputTokens: 1024,
+      thinkingConfig: THINKING,
       systemInstruction: [
         "You classify a Korean caregiver's short utterance about their baby's sleep into exactly one event.",
         "Intents: WAKE_UP(아침 기상/일어났어), NAP_START(낮잠 들었어), NAP_END(낮잠에서 깼어), NIGHT_SLEEP_START(밤잠 들었어), NIGHT_WAKE(밤중에 깼어), BACK_TO_SLEEP(다시 잠들었어).",
@@ -68,7 +114,7 @@ async function llmParseVoice(text: string, clientClock: Date): Promise<VoicePars
       },
     },
   });
-  const raw = JSON.parse(res.text || "{}");
+  const raw = JSON.parse(visibleText(res) || "{}");
   const intent: SleepEventType | null = INTENTS.includes(raw.intent) ? raw.intent : null;
   let time: Date | null = clientClock;
   if (raw.ambiguous) time = null;
@@ -93,13 +139,13 @@ async function llmParseVoice(text: string, clientClock: Date): Promise<VoicePars
 
 const COACH_SYSTEM = `당신은 한국의 0~24개월 영유아 보호자를 돕는 'AI 수면 코치'입니다.
 원칙:
-1. 제공된 [아기 기록 요약]에서 확인되는 사실과 [검증된 가이드]의 일반 정보를 구분해서 말하세요. "📋 기록에서 확인된 내용"과 "💡 일반적인 정보" 두 단락을 사용하세요.
+1. JSON으로만 답하세요. facts에는 [아기 기록 요약]에서 확인되는 사실을, info에는 [검증된 가이드]의 일반 정보와 제안을 한 문장씩 넣으세요. 제목·이모지·글머리표는 넣지 마세요(앱이 붙여요).
 2. 진단하지 마세요. "수면장애", "문제가 있다" 같은 표현을 쓰지 말고, 관찰된 변화를 중립적으로 설명하세요.
 3. 확정적 표현을 줄이고("~일 수 있어요", "~해 보세요"), 추천에는 짧은 이유를 붙이세요.
 4. 상관관계를 인과관계처럼 말하지 마세요.
 5. 호흡 이상, 고열, 의식 저하 등 건강 우려가 보이면 수면 조언 대신 119/의료진 상담을 먼저 안내하세요.
 6. 가이드에 없는 새로운 의학적 권고를 만들지 마세요. 안전수면 원칙(바로 눕혀 재우기, 단단하고 평평한 매트리스, 침대에 부드러운 물건 두지 않기)과 충돌하는 조언은 절대 하지 마세요.
-7. 보호자에게 죄책감이나 불안을 주지 말고 따뜻하게, 한국어 존댓말(해요체)로 8문장 이내로 답하세요.
+7. 보호자에게 죄책감이나 불안을 주지 말고 따뜻하게, 한국어 존댓말(해요체)로 facts와 info를 합쳐 8문장 이내로 쓰세요. 검토 메모, 규칙 확인, 초안, 영어 문장은 절대 넣지 말고 보호자에게 보여줄 최종 문장만 쓰세요.
 8. 다음 수면 시간은 [아기 기록 요약]의 prediction 값을 그대로 사용하고 새로 계산하지 마세요.`;
 
 async function llmCoach(question: string, ctx: CoachContext, history: { role: string; text: string }[]) {
@@ -119,10 +165,23 @@ async function llmCoach(question: string, ctx: CoachContext, history: { role: st
   const res = await client.models.generateContent({
     model: MODEL,
     contents,
-    config: { systemInstruction: COACH_SYSTEM, temperature: 0.4, maxOutputTokens: 900 },
+    config: {
+      systemInstruction: COACH_SYSTEM,
+      temperature: 0.4,
+      maxOutputTokens: 4096,
+      thinkingConfig: THINKING,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          facts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "기록에서 확인된 사실, 문장마다 1개 (0~4개)" },
+          info: { type: Type.ARRAY, items: { type: Type.STRING }, description: "일반적인 정보와 제안, 문장마다 1개 (1~4개)" },
+        },
+        required: ["facts", "info"],
+      },
+    },
   });
-  const text = res.text?.trim();
-  return text || null;
+  return formatCoachAnswer(visibleText(res));
 }
 
 /** Re-express event_time with the client's UTC offset. */
