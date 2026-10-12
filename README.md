@@ -1,5 +1,9 @@
 # 🌙 Baby Sleep Coach — 영유아 AI 수면 코치
 
+<p align="center"><img src="docs/thumbnail.jpg" alt="Baby Sleep Coach — 다음 잠은 언제? AI 수면 코치가 알려줘요" width="100%"></p>
+
+<p align="center"><a href="https://babysleep-coach.vercel.app"><b>👉 앱 열어보기: babysleep-coach.vercel.app</b></a></p>
+
 > "기록하는 육아 앱이 아니라, 우리 아기가 언제 자야 하는지 함께 배우는 AI 수면 코치."
 
 버튼 한 번 또는 말 한마디로 아기의 수면을 기록하면, 월령과 실제 수면 패턴을 분석해
