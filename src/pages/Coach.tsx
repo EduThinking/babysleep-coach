@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { Header } from "../components/Layout";
 import { Icon } from "../components/Icon";
 import { aiStatus, askCoach } from "../lib/api";
-import { SAFETY_NOTE, SUGGESTED_QUESTIONS, buildCoachContext } from "../lib/coach";
+import { COACH_SCOPE, SAFETY_NOTE, SUGGESTED_QUESTIONS, buildCoachContext } from "../lib/coach";
 import { fmtTime } from "../lib/time";
 
 /** tiny formatter: **bold**, _italic line_, line breaks */
@@ -122,6 +122,17 @@ export default function Coach() {
             </span>
             <span className="rounded-full bg-surface-low px-2.5 py-1 font-semibold text-ink-variant">{ctx.baby.ageGroup} 패턴</span>
             {ctx.prediction.next && <span className="rounded-full bg-muted-purple px-2.5 py-1 font-semibold text-primary">다음: {ctx.prediction.next}</span>}
+          </div>
+          <div className="mt-4 rounded-2xl bg-surface-low p-3">
+            <p className="flex items-center gap-1 text-[13px] font-bold text-ink">
+              <Icon name="bedtime" size={16} className="text-primary" /> 이런 내용을 코칭해 드려요
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-[13px] leading-relaxed text-ink-variant">
+              {COACH_SCOPE.map((s) => (
+                <li key={s}>· {s}</li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[12px] text-ink-variant">수유·이유식·발달 등 수면 밖의 질문은 아직 답하지 않아요.</p>
           </div>
         </section>
 
