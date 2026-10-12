@@ -4,7 +4,7 @@
 // Relative imports use explicit .js extensions because Vercel runs these as Node ES modules.
 import { GoogleGenAI, Type } from "@google/genai";
 import { parseVoice, toOffsetIso } from "../lib/voiceParser.js";
-import { ruleCoachAnswer, SAFETY_NOTE, RED_FLAG, type CoachContext } from "../lib/coachRules.js";
+import { ruleCoachAnswer, SAFETY_NOTE, RED_FLAG, SCOPE_MESSAGE, isOffTopic, type CoachContext } from "../lib/coachRules.js";
 import { searchGuides } from "../data/guides.js";
 import type { SleepEventType, VoiceParseResult } from "../lib/types";
 
@@ -60,6 +60,7 @@ export function formatCoachAnswer(raw: string): string | null {
   } catch {
     return null;
   }
+  if (data?.in_scope === false) return SCOPE_MESSAGE;
   const facts = (Array.isArray(data?.facts) ? data.facts : []).map(cleanLine).filter(Boolean).slice(0, 5);
   const info = (Array.isArray(data?.info) ? data.info : []).map(cleanLine).filter(Boolean).slice(0, 5);
   if (!facts.length && !info.length) return null;
@@ -146,7 +147,9 @@ const COACH_SYSTEM = `당신은 한국의 0~24개월 영유아 보호자를 돕�
 5. 호흡 이상, 고열, 의식 저하 등 건강 우려가 보이면 수면 조언 대신 119/의료진 상담을 먼저 안내하세요.
 6. 가이드에 없는 새로운 의학적 권고를 만들지 마세요. 안전수면 원칙(바로 눕혀 재우기, 단단하고 평평한 매트리스, 침대에 부드러운 물건 두지 않기)과 충돌하는 조언은 절대 하지 마세요.
 7. 보호자에게 죄책감이나 불안을 주지 말고 따뜻하게, 한국어 존댓말(해요체)로 facts와 info를 합쳐 8문장 이내로 쓰세요. 검토 메모, 규칙 확인, 초안, 영어 문장은 절대 넣지 말고 보호자에게 보여줄 최종 문장만 쓰세요.
-8. 다음 수면 시간은 [아기 기록 요약]의 prediction 값을 그대로 사용하고 새로 계산하지 마세요.`;
+8. 다음 수면 시간은 [아기 기록 요약]의 prediction 값을 그대로 사용하고 새로 계산하지 마세요.
+9. 질문이 아기 수면과 관련 없으면(이유식 메뉴, 배변, 예방접종, 놀이 등) in_scope를 false로 하고 facts와 info는 빈 배열로 두세요. 밤중 수유, 이앓이, 발달처럼 잠과 이어진 질문은 수면 관점에서 답하세요.
+10. 보호자가 지치거나 자책하는 마음을 드러내면 info의 첫 문장에서 먼저 그 마음을 알아주고, 보호자 탓이 아니라고 말한 뒤, 오늘 바로 해볼 수 있는 작은 행동 하나를 제안하세요. 우울감이 오래가거나 감당하기 어렵다고 하면 가족·전문가 도움과 정신건강 위기상담 전화(1577-0199)를 안내하세요.`;
 
 async function llmCoach(question: string, ctx: CoachContext, history: { role: string; text: string }[]) {
   const client = getAI();
@@ -174,10 +177,11 @@ async function llmCoach(question: string, ctx: CoachContext, history: { role: st
       responseSchema: {
         type: Type.OBJECT,
         properties: {
+          in_scope: { type: Type.BOOLEAN, description: "질문이 아기 수면(또는 잠과 이어진 수유·이앓이·발달)에 관한 것이면 true" },
           facts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "기록에서 확인된 사실, 문장마다 1개 (0~4개)" },
           info: { type: Type.ARRAY, items: { type: Type.STRING }, description: "일반적인 정보와 제안, 문장마다 1개 (1~4개)" },
         },
-        required: ["facts", "info"],
+        required: ["in_scope", "facts", "info"],
       },
     },
   });
@@ -220,8 +224,12 @@ export async function handleCoachChat(body: any): Promise<HandlerResult> {
     // safety answers are deterministic — never delegated to the LLM
     return { status: 200, body: { answer: ruleCoachAnswer(question, ctx), source: "rules" } };
   }
+  if (isOffTopic(question)) {
+    return { status: 200, body: { answer: SCOPE_MESSAGE, source: "rules" } };
+  }
   try {
     const answer = await llmCoach(question, ctx, history);
+    if (answer === SCOPE_MESSAGE) return { status: 200, body: { answer, source: "llm" } };
     if (answer) return { status: 200, body: { answer: `${answer}\n\n_${SAFETY_NOTE}_`, source: "llm" } };
   } catch (err: any) {
     console.warn("[coach/chat] LLM failed, using rules:", err?.message);
