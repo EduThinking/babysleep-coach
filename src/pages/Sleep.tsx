@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import { Header } from "../components/Layout";
+import { useMiniPlayerShown } from "../components/SoundProvider";
 import { Icon } from "../components/Icon";
 import { useEventSheet } from "../components/EventSheet";
 import { SleepBand, Timeline, buildTimeline } from "../components/Timeline";
@@ -42,6 +43,7 @@ export default function Sleep() {
 
 function DayView() {
   const { baby, events, now } = useStore();
+  const miniPlayer = useMiniPlayerShown();
   const openSheet = useEventSheet();
   const [day, setDay] = useState(() => startOfDay(new Date()));
   const isToday = sameDay(day, now);
@@ -124,7 +126,7 @@ function DayView() {
 
       <button
         onClick={() => openSheet({ time: isToday ? new Date() : new Date(day.getTime() + 12 * 3600_000) })}
-        className="press fixed bottom-[100px] right-[max(1.25rem,calc(50vw-200px))] z-30 flex items-center gap-2 rounded-full bg-primary px-5 py-3.5 text-[15px] font-semibold text-on-primary shadow-lift"
+        className={`press fixed ${miniPlayer ? "bottom-[160px]" : "bottom-[100px]"} right-[max(1.25rem,calc(50vw-200px))] z-30 flex items-center gap-2 rounded-full bg-primary px-5 py-3.5 text-[15px] font-semibold text-on-primary shadow-lift`}
       >
         <Icon name="add" /> 기록 추가
       </button>

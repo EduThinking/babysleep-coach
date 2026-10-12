@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { Header } from "../components/Layout";
+import { useMiniPlayerShown } from "../components/SoundProvider";
 import { Icon } from "../components/Icon";
 import { aiStatus, askCoach } from "../lib/api";
 import { COACH_SCOPE, SAFETY_NOTE, SUGGESTED_QUESTIONS, buildCoachContext } from "../lib/coach";
@@ -37,6 +38,7 @@ const SR: any = typeof window !== "undefined" ? (window as any).SpeechRecognitio
 
 export default function Coach() {
   const { baby, events, chats, addChat, clearChats, now } = useStore();
+  const miniPlayer = useMiniPlayerShown();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [input, setInput] = useState("");
@@ -241,7 +243,7 @@ export default function Coach() {
             e.preventDefault();
             void send(input);
           }}
-          className="sticky bottom-[88px] mt-3 flex items-center gap-2 rounded-full bg-card p-1.5 pl-4 shadow-lift"
+          className={`sticky ${miniPlayer ? "bottom-[152px]" : "bottom-[88px]"} mt-3 flex items-center gap-2 rounded-full bg-card p-1.5 pl-4 shadow-lift`}
         >
           <input
             value={input}

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import { soundEngine } from "../lib/audio";
 
 interface SoundState {
@@ -100,4 +101,14 @@ export function useSound() {
   const s = useContext(Ctx);
   if (!s) throw new Error("useSound must be used inside SoundProvider");
   return s;
+}
+
+/**
+ * True while the floating mini player is on screen (a sound is playing and we are not on the
+ * sounds page). Bottom-anchored UI uses this to sit above the player instead of under it.
+ */
+export function useMiniPlayerShown() {
+  const { current, playing } = useSound();
+  const { pathname } = useLocation();
+  return !!current && playing && pathname.replace(/\/$/, "") !== "/sounds";
 }
